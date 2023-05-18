@@ -1,12 +1,12 @@
 use std::path::Path;
 use image::{GenericImageView, ImageBuffer, ImageFormat, imageops};
+use indicatif::ProgressBar;
 use reqwest::StatusCode;
 use thiserror::Error;
 use serde_json::Value;
 use clap::Parser;
 use std::fs;
 use std::io;
-use std::thread;
 
 //https://steamcdn-a.akamaihd.net/steam/apps/{appid}/library_600x900_2x.jpg
 //http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={api_key}&steamid=%{steam_id}}&format=json
@@ -46,7 +46,7 @@ fn get_game_id_list(steam_id: &String, api_key: &String) -> Result<Vec<String>, 
     }
 
     let json: Value = response.json()?;
-    let game_count: usize = json["response"]["game_count"].as_i64().ok_or(SteamError::ParseError())?.try_into().unwrap(); // error handling
+    let game_count: usize = json["response"]["game_count"].as_i64().ok_or(SteamError::ParseError())?.try_into().unwrap();
     let mut game_list: Vec<String> = Vec::new();
     for game in 0..game_count {
         let app_id = json["response"]["games"][game]["appid"].as_i64().ok_or(SteamError::ParseError())?.to_string().clone();
@@ -56,15 +56,14 @@ fn get_game_id_list(steam_id: &String, api_key: &String) -> Result<Vec<String>, 
 }
 
 //TODO: error handling
-async fn save_image(game_id: String) -> Result<(), SteamError> {
-    let response = reqwest::get(format!("https://steamcdn-a.akamaihd.net/steam/apps/{}/library_600x900_2x.jpg", game_id)).await?;
+fn save_image(game_id: &String) -> Result<(), SteamError> {
+    let response = reqwest::blocking::get(format!("https://steamcdn-a.akamaihd.net/steam/apps/{}/library_600x900_2x.jpg", game_id))?;
     if !response.status().is_success() {
-        //TODO: for some games the images does not exist
         return Err(SteamError::RequestStatusError(response.status().as_u16()));
     }
 
-    let image_data = response.bytes().await.expect("err");
-    let image = image::load_from_memory(&image_data).expect("err");
+    let image_data = response.bytes()?;
+    let image = image::load_from_memory(&image_data)?;
  
     // Get the original image dimensions
     let original_width: i64 = image.dimensions().0.try_into().unwrap();
@@ -87,22 +86,14 @@ async fn save_image(game_id: String) -> Result<(), SteamError> {
     // Save the padded image as a new PNG file
     let output_path = format!("./out/{}.png", game_id);
     let output_path = Path::new(&output_path);
-    canvas.save_with_format(output_path, ImageFormat::Png)
-        .expect("Failed to save padded image.");
-    println!("image {}", game_id);
+    canvas.save_with_format(output_path, ImageFormat::Png)?;
     Ok(())
 }
 
-//TODO: error handling
-//TODO: progress bar
-#[tokio::main]
-async fn main() {
+fn main() {
     let args = Cli::parse();
     let args_copy = (args.steam_id.clone(), args.steam_api_key.clone());
-    let handle = thread::spawn(move || {
-        get_game_id_list(&args_copy.0, &args_copy.1).expect("err")
-    });
-
+   
     match fs::create_dir("./out") {
         Ok(()) => (),
         Err(error) => match error.kind() {
@@ -113,22 +104,17 @@ async fn main() {
             }
         }
     }
-    let games = handle.join().unwrap();
-    let mut join_handles = Vec::new();
+    let games = get_game_id_list(&args_copy.0, &args_copy.1).expect("err");
+    let progress_bar: ProgressBar = ProgressBar::new(games.len().try_into().unwrap());
+
+    let mut errors: String = "Failed to download the following image(s)\n".to_string();
 
     for game in games {
-        let app_id = game.clone();
-        let join_handle = tokio::spawn(save_image(app_id));
-        join_handles.push(join_handle);
-    }
-
-    for join_handle in join_handles {
-        match join_handle.await {
-            Ok(_) => (),
-            Err(error) => {
-                eprintln!("Error: {}", error);
-                std::process::exit(1);
-            }
+        progress_bar.set_message(format!("Downloading image {}", game));
+        if let Err(e) = save_image(&game) {
+            errors.push_str(&format!("AppID: {} Error: {} \n", game, e));
         }
+        progress_bar.inc(1);
     }
+    eprintln!("{errors}");
 }
