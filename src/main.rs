@@ -55,7 +55,6 @@ fn get_game_id_list(steam_id: &String, api_key: &String) -> Result<Vec<String>, 
     Ok(game_list)
 }
 
-//TODO: error handling
 fn save_image(game_id: &String) -> Result<(), SteamError> {
     let response = reqwest::blocking::get(format!("https://steamcdn-a.akamaihd.net/steam/apps/{}/library_600x900_2x.jpg", game_id))?;
     if !response.status().is_success() {
@@ -107,14 +106,15 @@ fn main() {
     let games = get_game_id_list(&args_copy.0, &args_copy.1).expect("err");
     let progress_bar: ProgressBar = ProgressBar::new(games.len().try_into().unwrap());
 
-    let mut errors: String = "Failed to download the following image(s)\n".to_string();
-
+    let mut errors = String::new();
+    let mut error_count = 0;
     for game in games {
         progress_bar.set_message(format!("Downloading image {}", game));
         if let Err(e) = save_image(&game) {
             errors.push_str(&format!("AppID: {} Error: {} \n", game, e));
+            error_count += 1;
         }
         progress_bar.inc(1);
     }
-    eprintln!("{errors}");
+    eprintln!("Failed to download {error_count} image(s) \n {errors}");
 }
