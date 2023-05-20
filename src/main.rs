@@ -1,6 +1,7 @@
 use std::path::Path;
 use image::{GenericImageView, ImageBuffer, ImageFormat, imageops};
 use indicatif::ProgressBar;
+use indicatif::ProgressStyle;
 use reqwest::StatusCode;
 use thiserror::Error;
 use serde_json::Value;
@@ -10,6 +11,7 @@ use std::io;
 
 //https://steamcdn-a.akamaihd.net/steam/apps/{appid}/library_600x900_2x.jpg
 //http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={api_key}&steamid=%{steam_id}}&format=json
+//https://store.steampowered.com/api/appdetails?appids={appid}
 
 #[derive(Parser)]
 struct Cli {
@@ -89,6 +91,19 @@ fn save_image(game_id: &String) -> Result<(), SteamError> {
     Ok(())
 }
 
+fn get_game_name(game_id: &String) -> Result<String, SteamError> {
+    let response = reqwest::blocking::get(format!("https://store.steampowered.com/api/appdetails?appids={}", game_id))?;
+    if !response.status().is_success() {
+        return Err(SteamError::RequestStatusError(response.status().as_u16()));
+    }
+    let json: Value = response.json()?;
+    if !json[game_id]["success"].as_bool().unwrap_or(false) {
+        return Err(SteamError::ParseError());
+    }
+    let name = json[game_id]["data"]["name"].as_str().ok_or(SteamError::ParseError())?;
+    Ok(name.to_string())
+}
+
 fn main() {
     let args = Cli::parse();
     let args_copy = (args.steam_id.clone(), args.steam_api_key.clone());
@@ -105,16 +120,20 @@ fn main() {
     }
     let games = get_game_id_list(&args_copy.0, &args_copy.1).expect("err");
     let progress_bar: ProgressBar = ProgressBar::new(games.len().try_into().unwrap());
-
+    progress_bar.set_style(ProgressStyle::with_template("{msg}\n{wide_bar} {pos}/{len} {eta}  ").unwrap());
     let mut errors = String::new();
     let mut error_count = 0;
     for game in games {
-        progress_bar.set_message(format!("Downloading image {}", game));
+        progress_bar.set_message(format!("Downloading image {}.png", game));
         if let Err(e) = save_image(&game) {
-            errors.push_str(&format!("AppID: {} Error: {} \n", game, e));
+            let game_name = get_game_name(&game).unwrap_or("?".to_string());
+            errors.push_str(&format!("Name: {} AppID: {} Error: {}\n", game_name, game, e));
             error_count += 1;
         }
         progress_bar.inc(1);
     }
-    eprintln!("Failed to download {error_count} image(s) \n {errors}");
+    progress_bar.finish_with_message("Done!");
+    if error_count > 1 {
+        eprint!("Failed to download {error_count} image(s)\n{errors}");
+    }
 }
