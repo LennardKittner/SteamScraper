@@ -13,6 +13,7 @@ use std::io;
 //http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={api_key}&steamid=%{steam_id}}&format=json
 //https://store.steampowered.com/api/appdetails?appids={appid}
 
+/// A CLI application to scrape game images from games in your steam library. 
 #[derive(Parser)]
 struct Cli {
     /// Your steam ID
@@ -21,16 +22,17 @@ struct Cli {
     /// A steam web API key
     #[arg(long = "steamAPI")]
     steam_api_key: String,
+    /// Disable image padding
+    #[arg(long = "disablePadding", default_value_t = false)]
+    disable_padding: bool
 }
 
 #[derive(Error, Debug)]
-pub enum SteamError {
+enum SteamError {
     #[error("request failed")]
     RequestFailed(#[from] reqwest::Error),
     #[error("response parsing failed")]
     ParseError(),
-    #[error("player not found")]
-    PlayerNotFound(),
     #[error("wrong api key")]
     WrongAPIKey(),
     #[error("failed with status {0}")]
@@ -57,7 +59,7 @@ fn get_game_id_list(steam_id: &String, api_key: &String) -> Result<Vec<String>, 
     Ok(game_list)
 }
 
-fn save_image(game_id: &String) -> Result<(), SteamError> {
+fn save_image(game_id: &String, with_padding: bool) -> Result<(), SteamError> {
     let response = reqwest::blocking::get(format!("https://steamcdn-a.akamaihd.net/steam/apps/{}/library_600x900_2x.jpg", game_id))?;
     if !response.status().is_success() {
         return Err(SteamError::RequestStatusError(response.status().as_u16()));
@@ -65,7 +67,14 @@ fn save_image(game_id: &String) -> Result<(), SteamError> {
 
     let image_data = response.bytes()?;
     let image = image::load_from_memory(&image_data)?;
- 
+    let output_path = format!("./out/{}.png", game_id);
+    let output_path = Path::new(&output_path);
+
+    if !with_padding {
+        image.save_with_format(output_path, ImageFormat::Png)?;
+        return Ok(());
+    }
+
     // Get the original image dimensions
     let original_width: i64 = image.dimensions().0.try_into().unwrap();
     let original_height: i64 = image.dimensions().1.try_into().unwrap();
@@ -85,8 +94,6 @@ fn save_image(game_id: &String) -> Result<(), SteamError> {
     imageops::overlay(&mut canvas, &image, padding_width, padding_height);
 
     // Save the padded image as a new PNG file
-    let output_path = format!("./out/{}.png", game_id);
-    let output_path = Path::new(&output_path);
     canvas.save_with_format(output_path, ImageFormat::Png)?;
     Ok(())
 }
@@ -125,7 +132,7 @@ fn main() {
     let mut error_count = 0;
     for game in games {
         progress_bar.set_message(format!("Downloading image {}.png", game));
-        if let Err(e) = save_image(&game) {
+        if let Err(e) = save_image(&game, !args.disable_padding) {
             let game_name = get_game_name(&game).unwrap_or("?".to_string());
             errors.push_str(&format!("Name: {} AppID: {} Error: {}\n", game_name, game, e));
             error_count += 1;
