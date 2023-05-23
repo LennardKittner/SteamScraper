@@ -36,12 +36,15 @@ You can also download a pre-compiled version from the [releases](https://github.
 ## FAQ
 
 **Why do I need my own Steam web API key?**
+
 There are a couple of reasons. I don't want to include my API key in the binary because it is hard to protect it from exfiltration. Another option would be to let the app connect to a proxy and forward the request with my API key. However, this would require me to host a server, and the Steam API rate limit could become a problem.
 
 **If I don't have a domain, how do I get a Steam API key?**
+
 I'm not sure, but I just used the URL of this repository and it worked, so you could try to fork it and use that URL.
 
 **Why is the process of downloading the images so slow?**
+
 Originally, I downloaded the images in parallel, and it was much faster. However, that resulted in DNS errors. This issue has been documented before: [https://github.com/seanmonstar/reqwest/issues/1285](https://github.com/seanmonstar/reqwest/issues/1285), and may get resolved in the future.
 
 ## Other apps
