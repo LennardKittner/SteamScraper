@@ -16,10 +16,10 @@ use std::io;
 /// A CLI application to scrape game images from games in your steam library. 
 #[derive(Parser)]
 struct Cli {
-    /// Your steam ID
+    /// Your Steam ID
     #[arg(long = "steamID")]
     steam_id: String,
-    /// A steam web API key
+    /// A Steam web API key
     #[arg(long = "steamAPI")]
     steam_api_key: String,
     /// Disable image padding
