@@ -1,8 +1,9 @@
 use std::path::Path;
 use image::{GenericImageView, ImageBuffer, ImageFormat, imageops};
 use reqwest::StatusCode;
-use thiserror::Error;
 use serde_json::Value;
+use thistermination::TerminationFull;
+use std::io::Error;
 
 // Endpoints:
 //https://steamcdn-a.akamaihd.net/steam/apps/{appid}/library_600x900_2x.jpg
@@ -10,18 +11,20 @@ use serde_json::Value;
 //https://store.steampowered.com/api/appdetails?appids={appid}
 
 
-#[derive(Error, Debug)]
+#[derive(TerminationFull)]
 pub enum SteamError {
-    #[error("request failed")]
+    #[termination(exit_code(2), msg("request failed"))]
     RequestFailed(#[from] reqwest::Error),
-    #[error("response parsing failed")]
+    #[termination(exit_code(3), msg("response parsing failed"))]
     ParseError(),
-    #[error("wrong api key")]
+    #[termination(exit_code(4), msg("wrong api key"))]
     WrongAPIKey(),
-    #[error("failed with status {0}")]
+    #[termination(exit_code(5), msg("failed with status {0}"))]
     RequestStatusError(u16),
-    #[error("failed to load image")]
+    #[termination(exit_code(6), msg("failed to load image"))]
     ImageLoadError(#[from] image::ImageError),
+    #[termination(exit_code(7), msg("{0}"))]
+    IOError(#[from] Error),
 }
 
 pub async fn get_game_id_list(steam_id: &str, api_key: &str) -> Result<Vec<String>, SteamError> {
